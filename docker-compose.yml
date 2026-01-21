@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: bbs-postgres
+    environment:
+      POSTGRES_DB: bbs
+      POSTGRES_USER: bbs_user
+      POSTGRES_PASSWORD: bbs_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - bbs_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bbs_user -d bbs"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+    container_name: bbs-backend
+    environment:
+      # Point to the postgres service on the compose network
+      DATABASE_URL: postgresql://bbs_user:bbs_password@postgres:5432/bbs
+      SECRET_KEY: dev-secret-key-for-docker
+      FRONTEND_URL: http://localhost:5173
+      # Google OAuth optional; add these if you want login working locally in docker
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  bbs_postgres_data:
+

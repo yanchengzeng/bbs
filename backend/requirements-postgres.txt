@@ -1,0 +1,21 @@
+# PostgreSQL dependencies
+# Only install this if you're using PostgreSQL instead of SQLite
+# Install with: pip install -r requirements-postgres.txt
+
+# For macOS installation issues, try these solutions:
+#
+# Option 1: Install system dependencies first (recommended for Apple Silicon)
+#   brew install postgresql
+#   export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
+#   pip install -r requirements-postgres.txt
+#
+# Option 2: Use a newer version (if 2.9.9 fails)
+#   pip install psycopg2-binary
+#
+# Option 3: Install OpenSSL if needed
+#   brew install openssl@3
+#   export LDFLAGS="-L/opt/homebrew/opt/openssl@3/lib"
+#   export CPPFLAGS="-I/opt/homebrew/opt/openssl@3/include"
+#   pip install -r requirements-postgres.txt
+
+psycopg2-binary==2.9.9

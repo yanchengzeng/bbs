@@ -328,6 +328,62 @@ VITE_API_URL=https://bbs-backend.onrender.com
 psql "postgresql://user:password@hostname:5432/database"
 ```
 
+### Supabase Connection Errors
+
+**Symptoms:**
+- Error: `connection to server at "db.xxxxx.supabase.co" failed: Network is unreachable`
+- Error: `Is the server running on that host and accepting TCP/IP connections?`
+- Migrations fail during deployment
+
+**Common Issues and Fixes:**
+
+1. **SSL Connection Required:**
+   - Supabase requires SSL connections
+   - **Fix:** The code automatically adds `sslmode=require` for Supabase connections
+   - Ensure your `DATABASE_URL` includes SSL parameters or let the code add them automatically
+   - Example: `postgresql://user:password@db.xxxxx.supabase.co:5432/postgres?sslmode=require`
+
+2. **IP Allowlist/Firewall:**
+   - Supabase may block connections from Render by default
+   - **Fix:** 
+     - Go to Supabase Dashboard → Your Project → Settings → Database
+     - Check "Connection Pooling" settings
+     - Add Render's IP addresses to allowlist (if available)
+     - Or use Supabase's connection pooling port (6543) instead of direct port (5432)
+     - Connection pooling URL format: `postgresql://user:password@db.xxxxx.supabase.co:6543/postgres?sslmode=require`
+
+3. **Use Connection Pooling (Recommended for Supabase):**
+   - Supabase provides a pooled connection port (6543) that's more reliable
+   - **Fix:** Use the pooled connection string from Supabase Dashboard:
+     - Go to Supabase Dashboard → Settings → Database → Connection Pooling
+     - Copy the "Connection string" (not the direct connection)
+     - It should use port `6543` instead of `5432`
+     - Format: `postgresql://postgres.xxxxx:[YOUR-PASSWORD]@aws-0-us-west-1.pooler.supabase.com:6543/postgres`
+
+4. **IPv6 vs IPv4:**
+   - Render might try IPv6 first, which Supabase may not support
+   - **Fix:** The connection string should work with both, but if issues persist:
+     - Try using the IPv4 address directly (if Supabase provides one)
+     - Or ensure your connection string uses the domain name (not IP)
+
+5. **Connection String Format:**
+   - Supabase connection strings from the dashboard should work directly
+   - **Fix:** Copy the exact connection string from:
+     - Supabase Dashboard → Settings → Database → Connection String
+     - Use "URI" format (starts with `postgresql://`)
+     - For pooled connections, use the "Connection Pooling" section
+
+**Example Supabase DATABASE_URL:**
+```bash
+# Direct connection (port 5432):
+DATABASE_URL=postgresql://postgres.xxxxx:[YOUR-PASSWORD]@db.xxxxx.supabase.co:5432/postgres?sslmode=require
+
+# Pooled connection (port 6543) - Recommended:
+DATABASE_URL=postgresql://postgres.xxxxx:[YOUR-PASSWORD]@aws-0-us-west-1.pooler.supabase.com:6543/postgres?sslmode=require
+```
+
+**Note:** Replace `[YOUR-PASSWORD]` with your actual database password. The code will automatically add `sslmode=require` if it's missing for Supabase connections.
+
 ### CORS Errors
 
 **Symptoms:** Frontend can't call backend API

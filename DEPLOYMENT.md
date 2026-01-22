@@ -53,7 +53,7 @@ You'll need these for the backend configuration:
    - **Region**: Same as database (for lower latency)
    - **Branch**: `main` (or your production branch)
    - **Root Directory**: `backend` (important!)
-   - **Runtime**: `Python 3`
+   - **Runtime**: `Python 3` (will use Python 3.12.7 from `runtime.txt`)
    -    **Build Command**: 
      ```bash
      pip install -r requirements.txt && pip install -r requirements-postgres.txt
@@ -63,7 +63,9 @@ You'll need these for the backend configuration:
      alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
      ```
    
-   **Note:** Render automatically sets the `$PORT` environment variable. The start command runs migrations first, then starts the server.
+   **Note:** 
+   - Render automatically sets the `$PORT` environment variable. The start command runs migrations first, then starts the server.
+   - The `runtime.txt` file in the backend directory pins Python to 3.12.7 to ensure compatibility with `psycopg2-binary`. Render will automatically use this version.
 
 5. **Before clicking "Create Web Service"**, you'll set environment variables after creation (easier to manage)
 

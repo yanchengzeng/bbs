@@ -51,6 +51,27 @@ export function UserPageSidebar({ userId, currentName, onNameUpdate, activeTab, 
       ${isOpen ? 'translate-x-0' : '-translate-x-full'}
       md:translate-x-0
     `}>
+      {/* Mobile close button */}
+      {onClose && (
+        <button
+          onClick={onClose}
+          className="md:hidden absolute top-4 right-4 p-1 text-zinc-400 hover:text-zinc-300 transition-colors"
+          aria-label="Close sidebar"
+        >
+          <svg 
+            className="w-5 h-5" 
+            fill="none" 
+            strokeLinecap="round" 
+            strokeLinejoin="round" 
+            strokeWidth="2" 
+            viewBox="0 0 24 24" 
+            stroke="currentColor"
+          >
+            <path d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
+      
       {/* Edit Username Section */}
       <div>
         <h3 className="text-sm font-semibold text-white mb-3">Settings</h3>

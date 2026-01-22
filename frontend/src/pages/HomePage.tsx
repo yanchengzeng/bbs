@@ -4,6 +4,16 @@ import { PostForm } from '../components/Post/PostForm';
 import { AllUsersWeeklyReport } from '../components/User/AllUsersWeeklyReport';
 import { useHeaderTabs } from '../App';
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  return 'Unknown error';
+}
+
 export function HomePage() {
   const { activeTab } = useHeaderTabs();
   const { data: posts, isLoading, error } = usePosts();
@@ -27,7 +37,7 @@ export function HomePage() {
         <div className="mx-auto max-w-2xl px-3 sm:px-4 pt-3">
           <div className="bg-red-900 border border-red-700 rounded-2xl shadow-sm p-4">
             <div className="text-sm text-red-200">
-              <strong>Error loading posts:</strong> {error.message}
+              <strong>Error loading posts:</strong> {getErrorMessage(error)}
             </div>
             <button
               onClick={() => window.location.reload()}
@@ -62,7 +72,7 @@ export function HomePage() {
               ) : error ? (
                 <div className="bg-red-900 border border-red-700 rounded-2xl shadow-sm p-4">
                   <div className="text-sm text-red-200">
-                    <strong>Error loading posts:</strong> {error instanceof Error ? error.message : 'Unknown error'}
+                    <strong>Error loading posts:</strong> {getErrorMessage(error)}
                   </div>
                 </div>
               ) : posts && posts.length > 0 ? (

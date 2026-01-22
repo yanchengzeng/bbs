@@ -11,9 +11,11 @@ interface UserPageSidebarProps {
   onNameUpdate: (newName: string) => void;
   activeTab: ActivityTab;
   onTabChange: (tab: ActivityTab) => void;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
-export function UserPageSidebar({ userId, currentName, onNameUpdate, activeTab, onTabChange }: UserPageSidebarProps) {
+export function UserPageSidebar({ userId, currentName, onNameUpdate, activeTab, onTabChange, isOpen = true, onClose }: UserPageSidebarProps) {
   const { user: currentUser } = useAuth();
   const updateUser = useUpdateUser();
   const [isEditingName, setIsEditingName] = useState(false);
@@ -42,7 +44,13 @@ export function UserPageSidebar({ userId, currentName, onNameUpdate, activeTab, 
   }
 
   return (
-    <div className="w-64 bg-zinc-800 border-r border-zinc-700 p-4 space-y-6 sticky top-16 h-fit">
+    <div className={`
+      w-64 bg-zinc-800 border-r border-zinc-700 p-4 space-y-6
+      fixed md:sticky top-16 left-0 z-40 h-[calc(100vh-4rem)] overflow-y-auto
+      transform transition-transform duration-300 ease-in-out
+      ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+      md:translate-x-0
+    `}>
       {/* Edit Username Section */}
       <div>
         <h3 className="text-sm font-semibold text-white mb-3">Settings</h3>

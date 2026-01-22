@@ -17,6 +17,7 @@ export function UserPage() {
   const { data: posts, isLoading: postsLoading, error: postsError } = usePosts(userId);
   const [userName, setUserName] = useState<string>('');
   const [activeTab, setActiveTab] = useState<ActivityTab>('feed');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   const { data: user, isLoading: userLoading, error: userError } = useQuery<User>({
     queryKey: ['user', userId],
@@ -61,8 +62,47 @@ export function UserPage() {
   
   const displayName = userName || user.name;
   
+  const handleTabChange = (tab: ActivityTab) => {
+    setActiveTab(tab);
+    // Close sidebar on mobile when tab is changed
+    setIsSidebarOpen(false);
+  };
+  
   return (
-    <div className="min-h-screen bg-zinc-900 text-white flex">
+    <div className="min-h-screen bg-zinc-900 text-white flex relative">
+      {/* Mobile backdrop overlay */}
+      {isOwnProfile && isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+      
+      {/* Mobile menu button */}
+      {isOwnProfile && (
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="fixed top-20 left-4 z-40 md:hidden p-2 bg-zinc-800 border border-zinc-700 rounded-lg hover:bg-zinc-700 transition-colors"
+          aria-label="Toggle sidebar"
+        >
+          <svg 
+            className="w-6 h-6 text-zinc-300" 
+            fill="none" 
+            strokeLinecap="round" 
+            strokeLinejoin="round" 
+            strokeWidth="2" 
+            viewBox="0 0 24 24" 
+            stroke="currentColor"
+          >
+            {isSidebarOpen ? (
+              <path d="M6 18L18 6M6 6l12 12" />
+            ) : (
+              <path d="M4 6h16M4 12h16M4 18h16" />
+            )}
+          </svg>
+        </button>
+      )}
+      
       {/* Sidebar */}
       {isOwnProfile && (
         <UserPageSidebar 
@@ -70,12 +110,14 @@ export function UserPage() {
           currentName={displayName}
           onNameUpdate={setUserName}
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
+          isOpen={isSidebarOpen}
+          onClose={() => setIsSidebarOpen(false)}
         />
       )}
       
       {/* Main Content */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 w-full">
         <div className="max-w-2xl mx-auto px-3 sm:px-4 py-6">
           {activeTab === 'feed' ? (
             <>

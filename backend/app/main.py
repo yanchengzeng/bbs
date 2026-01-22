@@ -5,10 +5,13 @@ from app.routers import auth, posts, comments, likes, users, search
 
 app = FastAPI(title="BBS Text Social Platform", version="1.0.0")
 
+# Normalize frontend URL (remove trailing slash if present)
+frontend_url = settings.frontend_url.rstrip('/')
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url],
+    allow_origins=[frontend_url],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

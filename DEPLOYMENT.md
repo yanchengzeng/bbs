@@ -78,7 +78,7 @@ You'll need these for the backend configuration:
    - `ALGORITHM` - `HS256`
    - `ACCESS_TOKEN_EXPIRE_MINUTES` - `15`
    - `REFRESH_TOKEN_EXPIRE_DAYS` - `7`
-   - `FRONTEND_URL` - You'll set this after deploying frontend (can use placeholder for now)
+   - `FRONTEND_URL` - Your Vercel frontend URL (e.g., `https://bbs-zeta.vercel.app`) - **NO trailing slash!**
    - `GOOGLE_CLIENT_ID` - Your Google OAuth Client ID
    - `GOOGLE_CLIENT_SECRET` - Your Google OAuth Client Secret
    - `GOOGLE_REDIRECT_URI` - Will be `https://your-service-name.onrender.com/auth/google/callback`
@@ -329,12 +329,35 @@ psql "postgresql://user:password@hostname:5432/database"
 ### CORS Errors
 
 **Symptoms:** Frontend can't call backend API
+- Error: `Access to fetch at '...' has been blocked by CORS policy`
+- Error: `No 'Access-Control-Allow-Origin' header is present`
 
 **Fix:**
-1. Check `FRONTEND_URL` in Render matches your Vercel URL exactly
-2. Check `VITE_API_URL` in Vercel matches your Render backend URL
-3. No trailing slashes in URLs
-4. Redeploy both services after changes
+1. **Check `FRONTEND_URL` in Render:**
+   - Must match your Vercel URL **exactly** (e.g., `https://bbs-zeta.vercel.app`)
+   - **NO trailing slash** (the code automatically strips it, but best to set it correctly)
+   - Must use `https://` (not `http://`)
+   - Case-sensitive - must match exactly
+
+2. **Check `VITE_API_URL` in Vercel:**
+   - Must match your Render backend URL (e.g., `https://bbs-9n5k.onrender.com`)
+   - **NO trailing slash**
+   - Must use `https://`
+
+3. **Verify in Render Dashboard:**
+   - Go to your backend service → Environment tab
+   - Check `FRONTEND_URL` value matches your Vercel URL exactly
+   - Example: If your Vercel app is `https://bbs-zeta.vercel.app`, then `FRONTEND_URL` should be exactly `https://bbs-zeta.vercel.app` (no trailing slash)
+
+4. **After updating environment variables:**
+   - Render will automatically redeploy
+   - Wait for deployment to complete
+   - Test again
+
+5. **If still not working:**
+   - Check Render logs for any startup errors
+   - Verify the backend is running (visit `https://your-backend.onrender.com/health`)
+   - Try clearing browser cache and hard refresh
 
 ### Google OAuth Not Working
 

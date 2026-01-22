@@ -62,7 +62,7 @@ export function HomePage() {
               ) : error ? (
                 <div className="bg-red-900 border border-red-700 rounded-2xl shadow-sm p-4">
                   <div className="text-sm text-red-200">
-                    <strong>Error loading posts:</strong> {error.message}
+                    <strong>Error loading posts:</strong> {error instanceof Error ? error.message : 'Unknown error'}
                   </div>
                 </div>
               ) : posts && posts.length > 0 ? (

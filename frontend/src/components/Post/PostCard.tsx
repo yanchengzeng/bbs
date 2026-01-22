@@ -90,7 +90,7 @@ export function PostCard({ post }: PostCardProps) {
     <article className="bg-zinc-800 border border-zinc-700 rounded-2xl shadow-sm p-3 sm:p-4">
       {/* Row 1: Avatar + Name + Timestamp */}
       <div className="flex items-center gap-2 mb-2">
-        {shouldShowUserAvatar ? (
+        {shouldShowUserAvatar && post.user ? (
           <Link to={`/users/${post.user.id}`}>
             <UserAvatar name={post.user.name} avatarUrl={post.user.avatar_url} size="md" />
           </Link>

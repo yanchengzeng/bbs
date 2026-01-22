@@ -1,11 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { usePosts } from '../hooks/usePosts';
 import { PostList } from '../components/Post/PostList';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../services/api';
 import type { User } from '../services/auth';
-import { UserAvatar } from '../components/User/UserAvatar';
 import { useAuth } from '../hooks/useAuth';
 import { UserPageSidebar } from '../components/User/UserPageSidebar';
 import { WeeklyReport } from '../components/User/WeeklyReport';
@@ -19,14 +18,17 @@ export function UserPage() {
   const [userName, setUserName] = useState<string>('');
   const [activeTab, setActiveTab] = useState<ActivityTab>('feed');
   
-  const { data: user, isLoading: userLoading, error: userError } = useQuery({
+  const { data: user, isLoading: userLoading, error: userError } = useQuery<User>({
     queryKey: ['user', userId],
     queryFn: () => apiRequest<User>(`/api/users/${userId}`),
     enabled: !!userId,
-    onSuccess: (data) => {
-      if (data) setUserName(data.name);
-    },
   });
+  
+  useEffect(() => {
+    if (user) {
+      setUserName(user.name);
+    }
+  }, [user]);
   
   const isLoading = postsLoading || userLoading;
   const error = postsError || userError;
@@ -49,7 +51,7 @@ export function UserPage() {
         <div className="max-w-4xl mx-auto px-4 py-8">
           <div className="bg-red-900 border border-red-700 rounded-lg p-4">
             <div className="text-sm text-red-200">
-              <strong>Error loading user:</strong> {error?.message || 'User not found'}
+              <strong>Error loading user:</strong> {error instanceof Error ? error.message : 'User not found'}
             </div>
           </div>
         </div>

@@ -5,6 +5,7 @@ from datetime import datetime, date
 from typing import Optional
 from uuid import UUID
 import hashlib
+import logging
 from app.database import get_db
 from app.models.post import Post
 from app.models.like import Like
@@ -13,6 +14,7 @@ from app.schemas.comment import CommentWithUser
 from app.middleware.auth import get_current_user, get_optional_user
 from app.models.user import User
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/posts", tags=["posts"])
 
 
@@ -26,7 +28,9 @@ async def get_posts(
     current_user: Optional[User] = Depends(get_optional_user)
 ):
     """Get all posts with pagination"""
-    query = db.query(Post)
+    try:
+        logger.info(f"Fetching posts - page: {page}, limit: {limit}, user_id: {user_id}, date: {date}")
+        query = db.query(Post)
     
     if user_id:
         query = query.filter(Post.user_id == user_id)
@@ -39,11 +43,13 @@ async def get_posts(
             query = query.filter(
                 func.date(Post.created_at) == filter_date
             )
-        except ValueError:
+        except ValueError as e:
             # Invalid date format, ignore the filter
+            logger.warning(f"Invalid date format provided: {date} - {str(e)}")
             pass
     
     posts = query.order_by(desc(Post.created_at)).offset((page - 1) * limit).limit(limit).all()
+    logger.debug(f"Found {len(posts)} posts")
     
     result = []
     for post in posts:
@@ -92,7 +98,14 @@ async def get_posts(
         )
         result.append(post_dict)
     
+    logger.info(f"Returning {len(result)} posts")
     return result
+    except Exception as e:
+        logger.error(f"Error fetching posts: {type(e).__name__} - {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch posts"
+        )
 
 
 @router.get("/{post_id}", response_model=PostWithUser)
@@ -102,9 +115,12 @@ async def get_post(
     current_user: Optional[User] = Depends(get_optional_user)
 ):
     """Get single post with comments"""
-    post = db.query(Post).filter(Post.id == post_id).first()
-    if not post:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+    try:
+        logger.info(f"Fetching post {post_id}")
+        post = db.query(Post).filter(Post.id == post_id).first()
+        if not post:
+            logger.warning(f"Post {post_id} not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
     
     # Get comments with user info
     comments = post.comments
@@ -150,7 +166,16 @@ async def get_post(
         is_liked=is_liked
     )
     
+    logger.debug(f"Returning post {post_id} with {len(comments_with_user)} comments")
     return post_dict
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching post {post_id}: {type(e).__name__} - {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch post"
+        )
 
 
 def get_client_ip(request: Request) -> str:
@@ -225,26 +250,37 @@ async def create_post(
     current_user: Optional[User] = Depends(get_optional_user)
 ):
     """Create new post (authenticated or auto-create user from IP)"""
-    if current_user:
-        # Authenticated user
-        db_post = Post(
-            user_id=current_user.id,
-            content=post.content,
-            tags=post.tags or []
+    try:
+        if current_user:
+            logger.info(f"Creating post for authenticated user {current_user.id}")
+            # Authenticated user
+            db_post = Post(
+                user_id=current_user.id,
+                content=post.content,
+                tags=post.tags or []
+            )
+        else:
+            # Auto-create user from IP
+            client_ip = get_client_ip(request)
+            logger.info(f"Creating post for anonymous user from IP: {client_ip}")
+            ip_user = create_user_from_ip(client_ip, db)
+            logger.debug(f"Created/found anonymous user {ip_user.id} for IP {client_ip}")
+            db_post = Post(
+                user_id=ip_user.id,
+                content=post.content,
+                tags=post.tags or []
+            )
+        db.add(db_post)
+        db.commit()
+        db.refresh(db_post)
+        logger.info(f"Post {db_post.id} created successfully")
+        return PostSchema.model_validate(db_post)
+    except Exception as e:
+        logger.error(f"Error creating post: {type(e).__name__} - {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create post"
         )
-    else:
-        # Auto-create user from IP
-        client_ip = get_client_ip(request)
-        ip_user = create_user_from_ip(client_ip, db)
-        db_post = Post(
-            user_id=ip_user.id,
-            content=post.content,
-            tags=post.tags or []
-        )
-    db.add(db_post)
-    db.commit()
-    db.refresh(db_post)
-    return PostSchema.model_validate(db_post)
 
 
 @router.put("/{post_id}", response_model=PostSchema)
@@ -255,29 +291,44 @@ async def update_post(
     current_user: User = Depends(get_current_user)
 ):
     """Update post (owner only, authenticated users only)"""
-    post = db.query(Post).filter(Post.id == post_id).first()
-    if not post:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
-    
-    # Only authenticated users can update posts, and only their own
-    if not post.user_id or post.user_id != current_user.id:
+    try:
+        logger.info(f"User {current_user.id} attempting to update post {post_id}")
+        post = db.query(Post).filter(Post.id == post_id).first()
+        if not post:
+            logger.warning(f"Post {post_id} not found for update")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+        
+        # Only authenticated users can update posts, and only their own
+        if not post.user_id or post.user_id != current_user.id:
+            logger.warning(f"User {current_user.id} attempted to update post {post_id} owned by {post.user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to update this post"
+            )
+        
+        if post_update.content is not None:
+            logger.debug(f"Updating content for post {post_id}")
+            post.content = post_update.content
+            post.updated_at = datetime.utcnow()
+            post.is_edited = True
+        if post_update.tags is not None:
+            logger.debug(f"Updating tags for post {post_id}")
+            post.tags = post_update.tags
+            post.updated_at = datetime.utcnow()
+            post.is_edited = True
+        
+        db.commit()
+        db.refresh(post)
+        logger.info(f"Post {post_id} updated successfully")
+        return PostSchema.model_validate(post)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating post {post_id}: {type(e).__name__} - {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to update this post"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update post"
         )
-    
-    if post_update.content is not None:
-        post.content = post_update.content
-        post.updated_at = datetime.utcnow()
-        post.is_edited = True
-    if post_update.tags is not None:
-        post.tags = post_update.tags
-        post.updated_at = datetime.utcnow()
-        post.is_edited = True
-    
-    db.commit()
-    db.refresh(post)
-    return PostSchema.model_validate(post)
 
 
 @router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)

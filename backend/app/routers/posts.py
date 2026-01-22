@@ -31,28 +31,97 @@ async def get_posts(
     try:
         logger.info(f"Fetching posts - page: {page}, limit: {limit}, user_id: {user_id}, date: {date}")
         query = db.query(Post)
-    
-    if user_id:
-        query = query.filter(Post.user_id == user_id)
-    
-    if date:
-        try:
-            filter_date = datetime.strptime(date, '%Y-%m-%d').date()
-            # Filter posts created on the specified date
-            # Use date() function to extract date part (works with SQLite and PostgreSQL)
-            query = query.filter(
-                func.date(Post.created_at) == filter_date
+        
+        if user_id:
+            query = query.filter(Post.user_id == user_id)
+        
+        if date:
+            try:
+                filter_date = datetime.strptime(date, '%Y-%m-%d').date()
+                # Filter posts created on the specified date
+                # Use date() function to extract date part (works with SQLite and PostgreSQL)
+                query = query.filter(
+                    func.date(Post.created_at) == filter_date
+                )
+            except ValueError as e:
+                # Invalid date format, ignore the filter
+                logger.warning(f"Invalid date format provided: {date} - {str(e)}")
+                pass
+        
+        posts = query.order_by(desc(Post.created_at)).offset((page - 1) * limit).limit(limit).all()
+        logger.debug(f"Found {len(posts)} posts")
+        
+        result = []
+        for post in posts:
+            # Get comments with user info
+            comments = post.comments
+            comments_with_user = []
+            for comment in comments:
+                comment_dict = CommentWithUser(
+                    id=comment.id,
+                    post_id=comment.post_id,
+                    user_id=comment.user_id,
+                    anonymous_name=comment.anonymous_name,
+                    content=comment.content,
+                    created_at=comment.created_at,
+                    updated_at=comment.updated_at,
+                    is_edited=comment.is_edited,
+                    user=comment.user if comment.user_id else None
+                )
+                comments_with_user.append(comment_dict)
+            
+            # Get like count
+            like_count = db.query(func.count(Like.id)).filter(Like.post_id == post.id).scalar() or 0
+            
+            # Check if current user liked this post
+            is_liked = False
+            if current_user:
+                is_liked = db.query(Like).filter(
+                    Like.post_id == post.id,
+                    Like.user_id == current_user.id
+                ).first() is not None
+            
+            # Create PostWithUser with all data
+            post_dict = PostWithUser(
+                id=post.id,
+                user_id=post.user_id,
+                anonymous_name=post.anonymous_name,
+                content=post.content,
+                tags=post.tags or [],
+                created_at=post.created_at,
+                updated_at=post.updated_at,
+                is_edited=post.is_edited,
+                user=post.user if post.user_id else None,
+                comments=comments_with_user,
+                like_count=like_count,
+                is_liked=is_liked
             )
-        except ValueError as e:
-            # Invalid date format, ignore the filter
-            logger.warning(f"Invalid date format provided: {date} - {str(e)}")
-            pass
-    
-    posts = query.order_by(desc(Post.created_at)).offset((page - 1) * limit).limit(limit).all()
-    logger.debug(f"Found {len(posts)} posts")
-    
-    result = []
-    for post in posts:
+            result.append(post_dict)
+        
+        logger.info(f"Returning {len(result)} posts")
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching posts: {type(e).__name__} - {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch posts"
+        )
+
+
+@router.get("/{post_id}", response_model=PostWithUser)
+async def get_post(
+    post_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user)
+):
+    """Get single post with comments"""
+    try:
+        logger.info(f"Fetching post {post_id}")
+        post = db.query(Post).filter(Post.id == post_id).first()
+        if not post:
+            logger.warning(f"Post {post_id} not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+        
         # Get comments with user info
         comments = post.comments
         comments_with_user = []
@@ -96,78 +165,9 @@ async def get_posts(
             like_count=like_count,
             is_liked=is_liked
         )
-        result.append(post_dict)
-    
-    logger.info(f"Returning {len(result)} posts")
-    return result
-    except Exception as e:
-        logger.error(f"Error fetching posts: {type(e).__name__} - {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch posts"
-        )
-
-
-@router.get("/{post_id}", response_model=PostWithUser)
-async def get_post(
-    post_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_user)
-):
-    """Get single post with comments"""
-    try:
-        logger.info(f"Fetching post {post_id}")
-        post = db.query(Post).filter(Post.id == post_id).first()
-        if not post:
-            logger.warning(f"Post {post_id} not found")
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
-    
-    # Get comments with user info
-    comments = post.comments
-    comments_with_user = []
-    for comment in comments:
-        comment_dict = CommentWithUser(
-            id=comment.id,
-            post_id=comment.post_id,
-            user_id=comment.user_id,
-            anonymous_name=comment.anonymous_name,
-            content=comment.content,
-            created_at=comment.created_at,
-            updated_at=comment.updated_at,
-            is_edited=comment.is_edited,
-            user=comment.user if comment.user_id else None
-        )
-        comments_with_user.append(comment_dict)
-    
-    # Get like count
-    like_count = db.query(func.count(Like.id)).filter(Like.post_id == post.id).scalar() or 0
-    
-    # Check if current user liked this post
-    is_liked = False
-    if current_user:
-        is_liked = db.query(Like).filter(
-            Like.post_id == post.id,
-            Like.user_id == current_user.id
-        ).first() is not None
-    
-    # Create PostWithUser with all data
-    post_dict = PostWithUser(
-        id=post.id,
-        user_id=post.user_id,
-        anonymous_name=post.anonymous_name,
-        content=post.content,
-        tags=post.tags or [],
-        created_at=post.created_at,
-        updated_at=post.updated_at,
-        is_edited=post.is_edited,
-        user=post.user if post.user_id else None,
-        comments=comments_with_user,
-        like_count=like_count,
-        is_liked=is_liked
-    )
-    
-    logger.debug(f"Returning post {post_id} with {len(comments_with_user)} comments")
-    return post_dict
+        
+        logger.debug(f"Returning post {post_id} with {len(comments_with_user)} comments")
+        return post_dict
     except HTTPException:
         raise
     except Exception as e:
@@ -338,17 +338,30 @@ async def delete_post(
     current_user: User = Depends(get_current_user)
 ):
     """Delete post (owner only, authenticated users only)"""
-    post = db.query(Post).filter(Post.id == post_id).first()
-    if not post:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
-    
-    # Only authenticated users can delete posts, and only their own
-    if not post.user_id or post.user_id != current_user.id:
+    try:
+        logger.info(f"User {current_user.id} attempting to delete post {post_id}")
+        post = db.query(Post).filter(Post.id == post_id).first()
+        if not post:
+            logger.warning(f"Post {post_id} not found for deletion")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+        
+        # Only authenticated users can delete posts, and only their own
+        if not post.user_id or post.user_id != current_user.id:
+            logger.warning(f"User {current_user.id} attempted to delete post {post_id} owned by {post.user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to delete this post"
+            )
+        
+        db.delete(post)
+        db.commit()
+        logger.info(f"Post {post_id} deleted successfully by user {current_user.id}")
+        return None
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting post {post_id}: {type(e).__name__} - {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to delete this post"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete post"
         )
-    
-    db.delete(post)
-    db.commit()
-    return None

@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from uuid import UUID
 from typing import Optional
+import logging
 from app.database import get_db
 from app.models.comment import Comment
 from app.models.post import Post
@@ -10,6 +11,7 @@ from app.schemas.comment import Comment as CommentSchema, CommentCreate, Comment
 from app.middleware.auth import get_current_user, get_optional_user
 from app.models.user import User
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["comments"])
 
 
@@ -21,43 +23,56 @@ async def create_comment(
     current_user: User | None = Depends(get_optional_user)
 ):
     """Add comment to post (authenticated or anonymous)"""
-    # Verify post exists
-    post = db.query(Post).filter(Post.id == post_id).first()
-    if not post:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
-    
-    # Allow anonymous comments if no user is logged in
-    if current_user:
-        db_comment = Comment(
-            post_id=post_id,
-            user_id=current_user.id,
-            content=comment.content
+    try:
+        logger.info(f"Creating comment on post {post_id} by user {current_user.id if current_user else 'anonymous'}")
+        # Verify post exists
+        post = db.query(Post).filter(Post.id == post_id).first()
+        if not post:
+            logger.warning(f"Post {post_id} not found for comment creation")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+        
+        # Allow anonymous comments if no user is logged in
+        if current_user:
+            db_comment = Comment(
+                post_id=post_id,
+                user_id=current_user.id,
+                content=comment.content
+            )
+        else:
+            # Anonymous comment
+            anonymous_name = comment.anonymous_name or "Anonymous"
+            db_comment = Comment(
+                post_id=post_id,
+                user_id=None,
+                anonymous_name=anonymous_name,
+                content=comment.content
+            )
+        
+        db.add(db_comment)
+        db.commit()
+        db.refresh(db_comment)
+        logger.info(f"Comment {db_comment.id} created successfully on post {post_id}")
+        
+        # Build CommentWithUser manually to handle anonymous comments
+        return CommentWithUser(
+            id=db_comment.id,
+            post_id=db_comment.post_id,
+            user_id=db_comment.user_id,
+            anonymous_name=db_comment.anonymous_name,
+            content=db_comment.content,
+            created_at=db_comment.created_at,
+            updated_at=db_comment.updated_at,
+            is_edited=db_comment.is_edited,
+            user=db_comment.user if db_comment.user_id else None
         )
-    else:
-        # Anonymous comment
-        anonymous_name = comment.anonymous_name or "Anonymous"
-        db_comment = Comment(
-            post_id=post_id,
-            user_id=None,
-            anonymous_name=anonymous_name,
-            content=comment.content
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating comment on post {post_id}: {type(e).__name__} - {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create comment"
         )
-    db.add(db_comment)
-    db.commit()
-    db.refresh(db_comment)
-    
-    # Build CommentWithUser manually to handle anonymous comments
-    return CommentWithUser(
-        id=db_comment.id,
-        post_id=db_comment.post_id,
-        user_id=db_comment.user_id,
-        anonymous_name=db_comment.anonymous_name,
-        content=db_comment.content,
-        created_at=db_comment.created_at,
-        updated_at=db_comment.updated_at,
-        is_edited=db_comment.is_edited,
-        user=db_comment.user if db_comment.user_id else None
-    )
 
 
 @router.put("/comments/{comment_id}", response_model=CommentSchema)

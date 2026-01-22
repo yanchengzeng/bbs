@@ -5,6 +5,7 @@ import { HomePage } from './pages/HomePage';
 import { UserPage } from './pages/UserPage';
 import { SearchPage } from './pages/SearchPage';
 import { LoginPage } from './pages/LoginPage';
+import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { useAuth } from './hooks/useAuth';
 import { useState, createContext, useContext } from 'react';
 
@@ -44,7 +45,7 @@ function AppRoutes() {
       <Route path="/users/:userId" element={<UserPage />} />
       <Route path="/search" element={<SearchPage />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/auth/callback" element={<Navigate to="/" replace />} />
+      <Route path="/auth/callback" element={<AuthCallbackPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

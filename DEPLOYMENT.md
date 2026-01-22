@@ -155,6 +155,8 @@ GOOGLE_REDIRECT_URI=https://your-render-backend.onrender.com/auth/google/callbac
 - **Output Directory**: `dist`
 - **Install Command**: `npm install`
 
+**Important:** The `vercel.json` file in the frontend directory configures Vercel to handle client-side routing (SPA). This ensures routes like `/auth/callback` work correctly.
+
 **Environment Variables:**
 - Click **"Add"** to add environment variables
 - Add: `VITE_API_URL` = `https://your-render-backend.onrender.com`
@@ -367,11 +369,28 @@ psql "postgresql://user:password@hostname:5432/database"
 - "invalid_request" error with "doesn't comply with Google's OAuth 2.0 policy"
 - User not created/logged in after OAuth
 
+**Important: Understanding Frontend vs Backend Domains**
+
+Your application has **two separate domains**:
+- **Frontend domain** (Vercel): `https://bbs.totheloners.com/` - This is where users visit your website
+- **Backend domain** (Render): `https://bbs-9n5k.onrender.com` or `https://api.totheloners.com` - This is where your API lives
+
+**OAuth redirect URI MUST point to your BACKEND, not frontend!**
+
+The OAuth flow works like this:
+1. User clicks "Login" on frontend (`bbs.totheloners.com`)
+2. Frontend redirects to backend (`/auth/google` on your backend domain)
+3. Backend redirects to Google OAuth
+4. Google redirects back to backend callback (`/auth/google/callback` on your backend domain)
+5. Backend processes OAuth and redirects to frontend with token
+
 **Common Issues and Fixes:**
 
 1. **Redirect URI Mismatch:**
    - `GOOGLE_REDIRECT_URI` in Render must match **exactly** what's configured in Google Cloud Console
    - Format: `https://your-backend-domain.com/auth/google/callback`
+   - **Must be your BACKEND domain** (e.g., `https://bbs-9n5k.onrender.com/auth/google/callback` or `https://api.totheloners.com/auth/google/callback`)
+   - **NOT your frontend domain** (do NOT use `bbs.totheloners.com`)
    - **NO trailing slash**
    - Must use `https://` (not `http://`)
    - Case-sensitive - must match exactly
@@ -395,23 +414,85 @@ psql "postgresql://user:password@hostname:5432/database"
 4. **Environment Variables in Render:**
    - `GOOGLE_CLIENT_ID` - Your OAuth 2.0 Client ID from Google Cloud Console
    - `GOOGLE_CLIENT_SECRET` - Your OAuth 2.0 Client Secret
-   - `GOOGLE_REDIRECT_URI` - Must be exactly: `https://api.totheloners.com/auth/google/callback` (replace with your actual backend URL)
-   - All three must be set correctly
+   - `GOOGLE_REDIRECT_URI` - Must be exactly your **BACKEND** URL: 
+     - If using Render URL: `https://bbs-9n5k.onrender.com/auth/google/callback`
+     - If using custom domain: `https://api.totheloners.com/auth/google/callback`
+     - **This MUST be your backend domain, NOT your frontend domain!**
+   - `FRONTEND_URL` - Must be your **FRONTEND** URL: `https://bbs.totheloners.com` (no trailing slash)
+   - All must be set correctly
+
+**Example Configuration for Your Setup:**
+```
+# In Render (Backend) Environment Variables:
+FRONTEND_URL=https://bbs.totheloners.com
+GOOGLE_REDIRECT_URI=https://bbs-9n5k.onrender.com/auth/google/callback
+# OR if you have a custom domain for backend:
+# GOOGLE_REDIRECT_URI=https://api.totheloners.com/auth/google/callback
+
+# In Vercel (Frontend) Environment Variables:
+VITE_API_URL=https://bbs-9n5k.onrender.com
+# OR if you have a custom domain for backend:
+# VITE_API_URL=https://api.totheloners.com
+```
+
+**In Google Cloud Console:**
+- **Authorized redirect URIs**: `https://bbs-9n5k.onrender.com/auth/google/callback` (must match `GOOGLE_REDIRECT_URI` exactly)
+- **Authorized JavaScript origins**: 
+  - `https://bbs-9n5k.onrender.com` (your backend)
+  - `https://bbs.totheloners.com` (your frontend)
 
 5. **Verify Configuration:**
    - Check `GOOGLE_REDIRECT_URI` matches exactly in:
    - Render environment variables: `https://your-backend.onrender.com/auth/google/callback`
    - Google Cloud Console → Credentials → OAuth 2.0 Client → Authorized redirect URIs
    - **Must match character-for-character, including https://**
-2. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are correct
-   - Copy from Google Cloud Console → Credentials
-   - No extra spaces or quotes
-3. OAuth consent screen is published (if using external users)
-   - Go to Google Cloud Console → OAuth consent screen
-   - Must be "Published" for external users
-4. Check Render logs for OAuth errors
+   - `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are correct
+     - Copy from Google Cloud Console → Credentials
+     - No extra spaces or quotes
+   - OAuth consent screen is published (if using external users)
+     - Go to Google Cloud Console → OAuth consent screen
+     - Must be "Published" for external users
+   - Check Render logs for OAuth errors
    - Look for "Authentication failed" messages
    - Check if Google API calls are succeeding
+
+### OAuth Callback 404 Error on Frontend
+
+**Symptoms:**
+- OAuth redirects to `https://bbs.totheloners.com/auth/callback?token=...` but shows 404
+- Backend OAuth callback works, but frontend route not found
+
+**Cause:**
+Vercel needs configuration to handle client-side routing for single-page applications (SPA).
+
+**Fix:**
+1. **Ensure `vercel.json` exists in frontend directory:**
+   ```json
+   {
+     "rewrites": [
+       {
+         "source": "/(.*)",
+         "destination": "/index.html"
+       }
+     ]
+   }
+   ```
+   This tells Vercel to serve `index.html` for all routes, allowing React Router to handle routing.
+
+2. **Verify the file is committed and deployed:**
+   - Check that `frontend/vercel.json` is in your repository
+   - Vercel will automatically use it on the next deployment
+
+3. **Redeploy on Vercel:**
+   - Push the `vercel.json` file to your repository
+   - Vercel will automatically redeploy
+   - Or manually trigger a redeploy from Vercel Dashboard
+
+4. **Verify the callback route exists:**
+   - Check `frontend/src/App.tsx` has route: `<Route path="/auth/callback" element={<AuthCallbackPage />} />`
+   - The `AuthCallbackPage` component should extract the token and redirect
+
+**Note:** The `vercel.json` file is already included in the repository. If you're still seeing 404s, ensure it's been deployed to Vercel.
 
 ### Images Not Loading
 
@@ -419,6 +500,83 @@ psql "postgresql://user:password@hostname:5432/database"
 1. Browser console for CORS errors
 2. Image URLs are accessible
 3. `referrerPolicy` in UserAvatar component
+
+### SSL Certificate "Not Secure" Warning in Chrome
+
+**Symptoms:**
+- Chrome shows "Not secure" or certificate warning for `https://api.totheloners.com`
+- Certificate appears valid but browser still shows warning
+- Mixed content warnings in browser console
+
+**Common Causes and Fixes:**
+
+1. **Certificate Not Fully Issued/Propagated:**
+   - Render's Let's Encrypt certificates can take up to 24 hours to fully propagate
+   - **Fix:** Wait 24 hours after adding custom domain, then check again
+   - Verify certificate status in Render Dashboard → Your Service → Settings → Custom Domains
+   - Certificate should show "Active" status
+
+2. **Mixed Content (HTTP resources on HTTPS page):**
+   - Chrome blocks HTTP resources loaded on HTTPS pages
+   - **Fix:** Ensure all resources use HTTPS:
+     - Check browser console (F12) for mixed content warnings
+     - Verify `VITE_API_URL` uses `https://` (not `http://`)
+     - Ensure all image URLs, API calls, and external resources use HTTPS
+     - Check that `FRONTEND_URL` and `GOOGLE_REDIRECT_URI` use `https://`
+
+3. **Browser Cache:**
+   - Chrome may cache old certificate state
+   - **Fix:**
+     - Clear browser cache and cookies for the domain
+     - Try incognito/private browsing mode
+     - Hard refresh: `Ctrl+Shift+R` (Windows/Linux) or `Cmd+Shift+R` (Mac)
+
+4. **DNS Propagation:**
+   - DNS changes can take time to propagate globally
+   - **Fix:**
+     - Verify DNS is correctly configured in Render Dashboard
+     - Check DNS propagation using tools like `dig` or online DNS checkers
+     - Wait up to 48 hours for full DNS propagation
+
+5. **Certificate Chain Issues:**
+   - Incomplete certificate chain can cause warnings
+   - **Fix:**
+     - Render automatically includes full certificate chain
+     - Verify using SSL Labs: https://www.ssllabs.com/ssltest/
+     - Check that certificate shows "Chain issues: None"
+
+6. **Verify Certificate Status:**
+   - **In Render Dashboard:**
+     1. Go to your service → **Settings** → **Custom Domains**
+     2. Check SSL certificate status (should be "Active")
+     3. Verify domain is correctly configured
+   - **Using Command Line:**
+     ```bash
+     openssl s_client -connect api.totheloners.com:443 -servername api.totheloners.com
+     ```
+   - **Using Browser:**
+     - Click the lock icon in address bar
+     - View certificate details
+     - Verify issuer is "Let's Encrypt" or "Google Trust Services"
+
+7. **Check for Redirect Issues:**
+   - Ensure HTTP redirects to HTTPS (Render does this automatically)
+   - **Fix:** Verify `https://api.totheloners.com` (not `http://`) is used everywhere
+
+**Quick Diagnostic Steps:**
+1. Check certificate status in Render Dashboard
+2. Test with SSL Labs: https://www.ssllabs.com/ssltest/analyze.html?d=api.totheloners.com
+3. Check browser console (F12) for mixed content warnings
+4. Verify all environment variables use `https://`
+5. Clear browser cache and try incognito mode
+6. Wait 24-48 hours if domain was recently added
+
+**If Issue Persists:**
+- Contact Render support with:
+  - Your service name
+  - Custom domain name
+  - Screenshot of certificate status in Render Dashboard
+  - SSL Labs test results
 
 ## Render-Specific Notes
 

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
+from urllib.parse import urlencode
 from app.database import get_db
 from app.models.user import User
 from app.schemas.user import User as UserSchema
@@ -16,13 +17,16 @@ router = APIRouter()
 @router.get("/google")
 async def google_auth():
     """Initiate Google OAuth flow"""
-    google_auth_url = (
-        "https://accounts.google.com/o/oauth2/v2/auth?"
-        f"client_id={settings.google_client_id}&"
-        f"redirect_uri={settings.google_redirect_uri}&"
-        "response_type=code&"
-        "scope=openid email profile"
-    )
+    # Properly encode the redirect URI
+    params = {
+        "client_id": settings.google_client_id,
+        "redirect_uri": settings.google_redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "online",
+        "prompt": "select_account"
+    }
+    google_auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
     return RedirectResponse(url=google_auth_url)
 
 

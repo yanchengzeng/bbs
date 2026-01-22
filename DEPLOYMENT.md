@@ -364,10 +364,42 @@ psql "postgresql://user:password@hostname:5432/database"
 **Symptoms:**
 - Redirect to Google works, but callback fails
 - "redirect_uri_mismatch" error
+- "invalid_request" error with "doesn't comply with Google's OAuth 2.0 policy"
 - User not created/logged in after OAuth
 
-**Check:**
-1. `GOOGLE_REDIRECT_URI` matches exactly in:
+**Common Issues and Fixes:**
+
+1. **Redirect URI Mismatch:**
+   - `GOOGLE_REDIRECT_URI` in Render must match **exactly** what's configured in Google Cloud Console
+   - Format: `https://your-backend-domain.com/auth/google/callback`
+   - **NO trailing slash**
+   - Must use `https://` (not `http://`)
+   - Case-sensitive - must match exactly
+
+2. **Google Cloud Console Configuration:**
+   - Go to [Google Cloud Console](https://console.cloud.google.com/) → Your Project → APIs & Services → Credentials
+   - Edit your OAuth 2.0 Client ID
+   - **Authorized redirect URIs** must include:
+     - `https://api.totheloners.com/auth/google/callback` (or your actual backend URL)
+   - **Authorized JavaScript origins** (optional but recommended):
+     - `https://api.totheloners.com` (your backend domain)
+     - `https://your-frontend.vercel.app` (your frontend domain)
+   - Save changes
+
+3. **OAuth Consent Screen:**
+   - Go to APIs & Services → OAuth consent screen
+   - Ensure your app is properly configured
+   - For testing: Add test users if your app is in "Testing" status
+   - For production: Complete app verification process
+
+4. **Environment Variables in Render:**
+   - `GOOGLE_CLIENT_ID` - Your OAuth 2.0 Client ID from Google Cloud Console
+   - `GOOGLE_CLIENT_SECRET` - Your OAuth 2.0 Client Secret
+   - `GOOGLE_REDIRECT_URI` - Must be exactly: `https://api.totheloners.com/auth/google/callback` (replace with your actual backend URL)
+   - All three must be set correctly
+
+5. **Verify Configuration:**
+   - Check `GOOGLE_REDIRECT_URI` matches exactly in:
    - Render environment variables: `https://your-backend.onrender.com/auth/google/callback`
    - Google Cloud Console → Credentials → OAuth 2.0 Client → Authorized redirect URIs
    - **Must match character-for-character, including https://**

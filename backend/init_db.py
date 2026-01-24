@@ -3,7 +3,7 @@ Script to initialize the database.
 Run this after setting up your .env file and before running migrations.
 """
 from app.database import engine, Base
-from app.models import User, Post, Comment, Like
+from app.models import User, Post, Comment, Like, Tag
 
 def init_db():
     """Create all database tables"""

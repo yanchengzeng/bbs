@@ -9,6 +9,7 @@ import logging
 from app.database import get_db
 from app.models.post import Post
 from app.models.like import Like
+from app.models.tag import Tag
 from app.schemas.post import Post as PostSchema, PostCreate, PostUpdate, PostWithUser
 from app.schemas.comment import CommentWithUser
 from app.middleware.auth import get_current_user, get_optional_user
@@ -16,6 +17,35 @@ from app.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/posts", tags=["posts"])
+
+
+def sync_post_tags(db: Session, post: Post, tag_names: list[str]):
+    """
+    Sync tags for a post: create tags in the tags table if they don't exist,
+    and update the post's tag relationships and JSON column.
+    """
+    if not tag_names:
+        # Clear all tags
+        post.tag_objects = []
+        post.tags = []
+        return
+    
+    # Ensure all tags exist in the tags table
+    tag_objects = []
+    for tag_name in tag_names:
+        # Get or create tag
+        tag = db.query(Tag).filter(Tag.name == tag_name).first()
+        if not tag:
+            tag = Tag(name=tag_name)
+            db.add(tag)
+            db.flush()  # Flush to get the tag in the session
+            logger.debug(f"Created new tag: {tag_name}")
+        tag_objects.append(tag)
+    
+    # Update post's tag relationships
+    post.tag_objects = tag_objects
+    # Also update the JSON column for backward compatibility
+    post.tags = tag_names
 
 
 @router.get("", response_model=list[PostWithUser])
@@ -271,6 +301,12 @@ async def create_post(
                 tags=post.tags or []
             )
         db.add(db_post)
+        db.flush()  # Flush to get the post ID
+        
+        # Sync tags (create tags in tags table if needed)
+        if post.tags:
+            sync_post_tags(db, db_post, post.tags)
+        
         db.commit()
         db.refresh(db_post)
         logger.info(f"Post {db_post.id} created successfully")
@@ -313,7 +349,8 @@ async def update_post(
             post.is_edited = True
         if post_update.tags is not None:
             logger.debug(f"Updating tags for post {post_id}")
-            post.tags = post_update.tags
+            # Sync tags (create tags in tags table if needed)
+            sync_post_tags(db, post, post_update.tags)
             post.updated_at = datetime.utcnow()
             post.is_edited = True
         
@@ -364,4 +401,22 @@ async def delete_post(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete post"
+        )
+
+
+@router.get("/tags/all", response_model=list[str])
+async def get_all_tags(
+    db: Session = Depends(get_db)
+):
+    """Get all available tags that have been used in posts"""
+    try:
+        tags = db.query(Tag).order_by(Tag.name).all()
+        tag_names = [tag.name for tag in tags]
+        logger.debug(f"Returning {len(tag_names)} tags")
+        return tag_names
+    except Exception as e:
+        logger.error(f"Error fetching tags: {type(e).__name__} - {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch tags"
         )

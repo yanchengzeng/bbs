@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import { useCreatePost } from '../../hooks/usePosts';
-
-const PRESET_TAGS = ['#gettingup', '#running', '#reading'];
+import { useTags, useInvalidateTags } from '../../hooks/useTags';
 
 export function PostForm() {
   const createPost = useCreatePost();
+  const { data: availableTags = [], isLoading: tagsLoading } = useTags();
+  const invalidateTags = useInvalidateTags();
   const [content, setContent] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [showAddTag, setShowAddTag] = useState(false);
   const [newTag, setNewTag] = useState('');
+  
   const handleTagClick = (tag: string) => {
     setSelectedTags(prev => 
       prev.includes(tag) 
@@ -20,14 +22,14 @@ export function PostForm() {
   const handleAddTag = () => {
     if (newTag.trim() && !newTag.trim().startsWith('#')) {
       const tagWithHash = `#${newTag.trim()}`;
-      if (!selectedTags.includes(tagWithHash) && !PRESET_TAGS.includes(tagWithHash)) {
+      if (!selectedTags.includes(tagWithHash)) {
         setSelectedTags(prev => [...prev, tagWithHash]);
         setNewTag('');
         setShowAddTag(false);
       }
     } else if (newTag.trim().startsWith('#')) {
       const tag = newTag.trim();
-      if (!selectedTags.includes(tag) && !PRESET_TAGS.includes(tag)) {
+      if (!selectedTags.includes(tag)) {
         setSelectedTags(prev => [...prev, tag]);
         setNewTag('');
         setShowAddTag(false);
@@ -50,6 +52,8 @@ export function PostForm() {
           setSelectedTags([]);
           setShowAddTag(false);
           setNewTag('');
+          // Invalidate tags to refresh the list with newly created tags
+          invalidateTags();
         }}
       );
     }
@@ -68,30 +72,38 @@ export function PostForm() {
           />
           {/* Tag Selection - Compact */}
           <div className="mt-1.5 flex flex-wrap gap-1.5 items-center">
-            {PRESET_TAGS.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => handleTagClick(tag)}
-                className={`px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${
-                  selectedTags.includes(tag)
-                    ? 'bg-white text-zinc-900'
-                    : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
-                }`}
-              >
-                {tag}
-              </button>
-            ))}
-            {selectedTags.filter(t => !PRESET_TAGS.includes(t)).map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => handleTagClick(tag)}
-                className="px-2 py-0.5 rounded-full text-xs font-medium transition-colors bg-white text-zinc-900"
-              >
-                {tag}
-              </button>
-            ))}
+            {tagsLoading ? (
+              <span className="text-xs text-zinc-500">Loading tags...</span>
+            ) : (
+              <>
+                {/* Show all available tags from API */}
+                {availableTags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => handleTagClick(tag)}
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${
+                      selectedTags.includes(tag)
+                        ? 'bg-white text-zinc-900'
+                        : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+                {/* Show selected tags that aren't in availableTags (newly created tags) */}
+                {selectedTags.filter(t => !availableTags.includes(t)).map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => handleTagClick(tag)}
+                    className="px-2 py-0.5 rounded-full text-xs font-medium transition-colors bg-white text-zinc-900"
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </>
+            )}
             {showAddTag ? (
               <div className="flex items-center gap-1">
                 <input

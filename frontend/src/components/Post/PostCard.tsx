@@ -8,18 +8,19 @@ import { useToggleLike } from '../../hooks/useLikes';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { usePostLikes } from '../../hooks/useLikes';
+import { useTags, useInvalidateTags } from '../../hooks/useTags';
 
 interface PostCardProps {
   post: Post;
 }
-
-const PRESET_TAGS = ['#gettingup', '#running', '#reading'];
 
 export function PostCard({ post }: PostCardProps) {
   const { user: currentUser } = useAuth();
   const deletePost = useDeletePost();
   const updatePost = useUpdatePost();
   const toggleLike = useToggleLike();
+  const { data: availableTags = [], isLoading: tagsLoading } = useTags();
+  const invalidateTags = useInvalidateTags();
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
   const [editTags, setEditTags] = useState<string[]>(post.tags || []);
@@ -38,14 +39,14 @@ export function PostCard({ post }: PostCardProps) {
   const handleAddTag = () => {
     if (newTag.trim() && !newTag.trim().startsWith('#')) {
       const tagWithHash = `#${newTag.trim()}`;
-      if (!editTags.includes(tagWithHash) && !PRESET_TAGS.includes(tagWithHash)) {
+      if (!editTags.includes(tagWithHash)) {
         setEditTags(prev => [...prev, tagWithHash]);
         setNewTag('');
         setShowAddTag(false);
       }
     } else if (newTag.trim().startsWith('#')) {
       const tag = newTag.trim();
-      if (!editTags.includes(tag) && !PRESET_TAGS.includes(tag)) {
+      if (!editTags.includes(tag)) {
         setEditTags(prev => [...prev, tag]);
         setNewTag('');
         setShowAddTag(false);
@@ -62,7 +63,11 @@ export function PostCard({ post }: PostCardProps) {
   const handleUpdate = () => {
     updatePost.mutate(
       { postId: post.id, data: { content: editContent, tags: editTags } },
-      { onSuccess: () => setIsEditing(false) }
+      { onSuccess: () => {
+        setIsEditing(false);
+        // Invalidate tags to refresh the list with newly created tags
+        invalidateTags();
+      }}
     );
   };
 
@@ -175,30 +180,38 @@ export function PostCard({ post }: PostCardProps) {
           />
           {/* Tag Selection in Edit Mode */}
           <div className="flex flex-wrap gap-2 items-center">
-            {PRESET_TAGS.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => handleTagClick(tag)}
-                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  editTags.includes(tag)
-                    ? 'bg-white text-zinc-900'
-                    : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
-                }`}
-              >
-                {tag}
-              </button>
-            ))}
-            {editTags.filter(t => !PRESET_TAGS.includes(t)).map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => handleTagClick(tag)}
-                className="px-3 py-1 rounded-full text-xs font-medium transition-colors bg-white text-zinc-900"
-              >
-                {tag}
-              </button>
-            ))}
+            {tagsLoading ? (
+              <span className="text-xs text-zinc-500">Loading tags...</span>
+            ) : (
+              <>
+                {/* Show all available tags from API */}
+                {availableTags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => handleTagClick(tag)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                      editTags.includes(tag)
+                        ? 'bg-white text-zinc-900'
+                        : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+                {/* Show selected tags that aren't in availableTags (newly created tags) */}
+                {editTags.filter(t => !availableTags.includes(t)).map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => handleTagClick(tag)}
+                    className="px-3 py-1 rounded-full text-xs font-medium transition-colors bg-white text-zinc-900"
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </>
+            )}
             {showAddTag ? (
               <div className="flex items-center gap-1">
                 <input

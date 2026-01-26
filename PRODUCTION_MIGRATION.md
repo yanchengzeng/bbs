@@ -71,6 +71,40 @@ CREATE TABLE post_tags (
 CREATE INDEX ix_post_tags_tag_name ON post_tags(tag_name);
 ```
 
+## Data Migration: Populate Preset Tags
+
+After the schema migration completes, you need to populate the `tags` table with the preset tags:
+
+### Option A: Automatic (Recommended - Add to Start Command)
+
+Update your Render start command to:
+```bash
+alembic upgrade head && python migrate_preset_tags.py && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+This will automatically populate preset tags on each deployment (idempotent - won't create duplicates).
+
+### Option B: Manual (One-time)
+
+1. **Using Render Shell:**
+   ```bash
+   cd backend
+   python migrate_preset_tags.py
+   ```
+
+2. **Using Local Connection:**
+   ```bash
+   # Set DATABASE_URL to production (temporarily)
+   export DATABASE_URL="postgresql://user:password@host:5432/database"
+   cd backend
+   python migrate_preset_tags.py
+   # Remove DATABASE_URL after migration
+   ```
+
+The script will:
+- Create `#gettingup`, `#running`, and `#reading` tags if they don't exist
+- Skip tags that already exist (safe to run multiple times)
+
 ## Verification
 
 After migration, verify it worked:
@@ -81,11 +115,14 @@ After migration, verify it worked:
 
 2. **Test the API**:
    ```bash
-   # Get all tags (should return empty array initially)
+   # Get all tags (should return preset tags after data migration)
    curl https://your-backend.onrender.com/api/posts/tags/all
+   # Should return: ["#gettingup", "#running", "#reading"]
    
    # Create a post with a new tag
    # Then check tags again - should include the new tag
+   curl https://your-backend.onrender.com/api/posts/tags/all
+   # Should now include the newly created tag
    ```
 
 3. **Check Database** (if you have access):

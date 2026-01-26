@@ -6,14 +6,18 @@ import { getCurrentUser } from '../services/auth';
 export function AuthCallbackPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { setToken, setUser } = useAuthStore();
+  const { setToken, setRefreshToken, setUser } = useAuthStore();
   
   useEffect(() => {
     const token = searchParams.get('token');
+    const refreshToken = searchParams.get('refresh_token');
     
     if (token) {
-      // Save token
+      // Save tokens
       setToken(token);
+      if (refreshToken) {
+        setRefreshToken(refreshToken);
+      }
       
       // Fetch user info
       getCurrentUser()
@@ -26,6 +30,7 @@ export function AuthCallbackPage() {
           console.error('Failed to get user:', error);
           // Token invalid, clear it and redirect to login
           setToken(null);
+          setRefreshToken(null);
           setUser(null);
           navigate('/login', { replace: true });
         });
@@ -33,7 +38,7 @@ export function AuthCallbackPage() {
       // No token in URL, redirect to home
       navigate('/', { replace: true });
     }
-  }, [searchParams, setToken, setUser, navigate]);
+  }, [searchParams, setToken, setRefreshToken, setUser, navigate]);
   
   // Show loading state while processing
   return (

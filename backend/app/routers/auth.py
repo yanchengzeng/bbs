@@ -3,15 +3,17 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 from urllib.parse import urlencode
+from uuid import UUID
 import httpx
 import logging
 from app.database import get_db
 from app.models.user import User
 from app.schemas.user import User as UserSchema
 from app.services.oauth import get_google_access_token, get_google_user_info
-from app.services.auth import create_access_token
+from app.services.auth import create_access_token, create_refresh_token
 from app.middleware.auth import get_current_user
 from app.config import settings
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -96,12 +98,13 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
         db.refresh(user)
         logger.info(f"User {user.id} authenticated successfully")
         
-        # Create JWT token
-        token = create_access_token(data={"sub": str(user.id)})
-        logger.debug("JWT token created")
+        # Create access and refresh tokens
+        access_token = create_access_token(data={"sub": str(user.id)})
+        refresh_token = create_refresh_token(data={"sub": str(user.id)})
+        logger.debug("JWT tokens created")
         
-        # Redirect to frontend with token
-        redirect_url = f"{settings.frontend_url}/auth/callback?token={token}"
+        # Redirect to frontend with both tokens
+        redirect_url = f"{settings.frontend_url}/auth/callback?token={access_token}&refresh_token={refresh_token}"
         logger.info(f"Redirecting to frontend: {settings.frontend_url}")
         return RedirectResponse(url=redirect_url)
         
@@ -135,6 +138,49 @@ async def get_me(current_user: User = Depends(get_current_user)):
     """Get current user info"""
     logger.debug(f"Fetching user info for user {current_user.id}")
     return UserSchema.model_validate(current_user)
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post("/refresh")
+async def refresh_token(
+    request: RefreshTokenRequest,
+    db: Session = Depends(get_db)
+):
+    """Refresh access token using refresh token"""
+    from jose import JWTError, jwt
+    from app.config import settings
+    
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate refresh token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        payload = jwt.decode(request.refresh_token, settings.secret_key, algorithms=[settings.algorithm])
+        # Verify it's a refresh token
+        if payload.get("type") != "refresh":
+            raise credentials_exception
+        
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    
+    # Verify user still exists
+    user = db.query(User).filter(User.id == UUID(user_id)).first()
+    if user is None:
+        raise credentials_exception
+    
+    # Create new access token
+    new_access_token = create_access_token(data={"sub": str(user.id)})
+    logger.info(f"Refreshed access token for user {user.id}")
+    
+    return {"access_token": new_access_token}
 
 
 @router.post("/logout")

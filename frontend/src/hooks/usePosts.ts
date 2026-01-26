@@ -115,10 +115,18 @@ export interface WeeklySummaryItem {
   posts: Post[];
 }
 
+// Get timezone offset in minutes from UTC
+function getTimezoneOffset(): number {
+  return -new Date().getTimezoneOffset();
+}
+
 export function useWeeklySummary(userId: string) {
   return useQuery({
     queryKey: ['weekly-summary', userId],
-    queryFn: () => apiRequest<WeeklySummaryItem[]>(`/api/users/${userId}/weekly-summary`),
+    queryFn: () => {
+      const timezoneOffset = getTimezoneOffset();
+      return apiRequest<WeeklySummaryItem[]>(`/api/users/${userId}/weekly-summary?timezone_offset=${timezoneOffset}`);
+    },
     enabled: !!userId,
   });
 }
@@ -132,7 +140,10 @@ export interface WeeklyReport {
 export function useWeeklyReports(userId: string) {
   return useQuery({
     queryKey: ['weekly-reports', userId],
-    queryFn: () => apiRequest<WeeklyReport[]>(`/api/users/${userId}/weekly-reports`),
+    queryFn: () => {
+      const timezoneOffset = getTimezoneOffset();
+      return apiRequest<WeeklyReport[]>(`/api/users/${userId}/weekly-reports?timezone_offset=${timezoneOffset}`);
+    },
     enabled: !!userId,
   });
 }

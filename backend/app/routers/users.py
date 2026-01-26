@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from uuid import UUID
-from datetime import datetime, timedelta
-from typing import List
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
 from pydantic import BaseModel
 from app.database import get_db
 from app.models.user import User
@@ -137,7 +137,8 @@ class WeeklySummaryItem(BaseModel):
 async def get_weekly_summary(
     user_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user)
+    current_user: User | None = Depends(get_optional_user),
+    timezone_offset: Optional[int] = Query(None, description="Timezone offset in minutes from UTC (e.g., -480 for PST)")
 ):
     """Get weekly summary of user's posts grouped by tags"""
     import re
@@ -146,9 +147,23 @@ async def get_weekly_summary(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
-    # Calculate date range for this week (last 7 days)
-    end_date = datetime.utcnow()
-    start_date = end_date - timedelta(days=7)
+    # Get current time in UTC
+    utc_now = datetime.now(timezone.utc)
+    
+    # Convert to local time if timezone offset is provided
+    if timezone_offset is not None:
+        local_tz = timezone(timedelta(minutes=timezone_offset))
+        local_now = utc_now.astimezone(local_tz)
+        # Calculate date range for this week (last 7 days) in local time
+        local_end_date = local_now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        local_start_date = (local_end_date - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+        # Convert back to UTC for database query
+        start_date = local_start_date.astimezone(timezone.utc).replace(tzinfo=None)
+        end_date = local_end_date.astimezone(timezone.utc).replace(tzinfo=None)
+    else:
+        # Default to UTC if no timezone offset provided
+        end_date = utc_now.replace(tzinfo=None)
+        start_date = (end_date - timedelta(days=7))
     
     # Get posts from this week
     posts = db.query(Post).filter(
@@ -451,7 +466,8 @@ async def get_weekly_reports(
     user_id: UUID,
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
-    weeks: int = Query(4, ge=1, le=12)  # Number of weeks to return, default 4
+    weeks: int = Query(4, ge=1, le=12),  # Number of weeks to return, default 4
+    timezone_offset: Optional[int] = Query(None, description="Timezone offset in minutes from UTC (e.g., -480 for PST)")
 ):
     """Get weekly reports for multiple weeks, sorted by week range"""
     user = db.query(User).filter(User.id == user_id).first()
@@ -461,20 +477,42 @@ async def get_weekly_reports(
     preset_tags = ['#gettingup', '#running', '#reading']
     reports = []
     
-    # Get reports for the last N weeks
-    today = datetime.utcnow()
+    # Get current time in UTC
+    utc_now = datetime.now(timezone.utc)
+    
+    # Set up timezone for conversions
+    if timezone_offset is not None:
+        local_tz = timezone(timedelta(minutes=timezone_offset))
+        local_now = utc_now.astimezone(local_tz)
+        # Use local time for week calculations (naive datetime in local timezone)
+        today = local_now.replace(tzinfo=None)
+    else:
+        # Default to UTC if no timezone offset provided
+        local_tz = None
+        today = utc_now.replace(tzinfo=None)
+    
     for week_offset in range(weeks):
-        # Calculate week range (Monday to Sunday)
+        # Calculate week range (Monday to Sunday) in local time
         days_since_monday = today.weekday()
         week_start_date = today - timedelta(days=days_since_monday + 7 * week_offset)
         week_start_date = week_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
         week_end_date = week_start_date + timedelta(days=6, hours=23, minutes=59, seconds=59)
         
-        # Get posts for this week
+        # Convert week boundaries to UTC for database query
+        if local_tz is not None:
+            # Convert local time boundaries to UTC
+            week_start_utc = week_start_date.replace(tzinfo=local_tz).astimezone(timezone.utc).replace(tzinfo=None)
+            week_end_utc = week_end_date.replace(tzinfo=local_tz).astimezone(timezone.utc).replace(tzinfo=None)
+        else:
+            # Already in UTC
+            week_start_utc = week_start_date
+            week_end_utc = week_end_date
+        
+        # Get posts for this week (using UTC boundaries for database query)
         week_posts = db.query(Post).filter(
             Post.user_id == user_id,
-            Post.created_at >= week_start_date,
-            Post.created_at <= week_end_date
+            Post.created_at >= week_start_utc,
+            Post.created_at <= week_end_utc
         ).all()
         
         if week_posts:

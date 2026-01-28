@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.post import Post
 from app.models.like import Like
+from app.models.tag import Tag
 from app.schemas.user import User as UserSchema, UserUpdate
 from app.schemas.post import PostWithUser
 from app.schemas.comment import CommentWithUser
@@ -172,8 +173,9 @@ async def get_weekly_summary(
         Post.created_at <= end_date
     ).all()
     
-    # Preset tags to look for
-    preset_tags = ['#gettingup', '#running', '#reading']
+    # Get all tags from the tags table
+    all_tags = db.query(Tag).order_by(Tag.name).all()
+    available_tag_names = {tag.name for tag in all_tags}
     
     # Group posts by tag
     tag_posts: dict[str, list[Post]] = {}
@@ -184,19 +186,19 @@ async def get_weekly_summary(
         tags = post.tags or []
         
         if tags:
-            # Check if post has any preset tags
-            has_preset_tag = False
+            # Check if post has any tags that exist in the database
+            has_valid_tag = False
             for tag in tags:
-                if tag in preset_tags:
-                    has_preset_tag = True
+                if tag in available_tag_names:
+                    has_valid_tag = True
                     if tag not in tag_posts:
                         tag_posts[tag] = []
                     if post.id not in processed_posts:
                         tag_posts[tag].append(post)
                         processed_posts.add(post.id)
             
-            # If post has tags but none are preset tags, add to "other"
-            if not has_preset_tag and post.id not in processed_posts:
+            # If post has tags but none are in the database, add to "other"
+            if not has_valid_tag and post.id not in processed_posts:
                 other_posts.append(post)
                 processed_posts.add(post.id)
         else:
@@ -208,59 +210,58 @@ async def get_weekly_summary(
     # Build result with posts
     result = []
     
-    # Add tagged categories
-    for tag in preset_tags:
-        if tag in tag_posts:
-            tag_post_list = tag_posts[tag]
-            # Convert posts to PostWithUser format
-            posts_with_user = []
-            for post in tag_post_list:
-                # Get like count
-                like_count = db.query(func.count(Like.id)).filter(Like.post_id == post.id).scalar() or 0
-                # Check if current user liked this post
-                is_liked = False
-                if current_user:
-                    is_liked = db.query(Like).filter(
-                        Like.post_id == post.id,
-                        Like.user_id == current_user.id
-                    ).first() is not None
-                # Get comments
-                comments_with_user = []
-                for comment in post.comments:
-                    comment_dict = CommentWithUser(
-                        id=comment.id,
-                        post_id=comment.post_id,
-                        user_id=comment.user_id,
-                        anonymous_name=comment.anonymous_name,
-                        content=comment.content,
-                        created_at=comment.created_at,
-                        updated_at=comment.updated_at,
-                        is_edited=comment.is_edited,
-                        user=comment.user if comment.user_id else None
-                    )
-                    comments_with_user.append(comment_dict)
-                
-                post_dict = PostWithUser(
-                    id=post.id,
-                    user_id=post.user_id,
-                    anonymous_name=post.anonymous_name,
-                    content=post.content,
-                    tags=post.tags or [],
-                    created_at=post.created_at,
-                    updated_at=post.updated_at,
-                    is_edited=post.is_edited,
-                    user=post.user if post.user_id else None,
-                    comments=comments_with_user,
-                    like_count=like_count,
-                    is_liked=is_liked
+    # Add tagged categories (sorted by tag name)
+    for tag_name in sorted(tag_posts.keys()):
+        tag_post_list = tag_posts[tag_name]
+        # Convert posts to PostWithUser format
+        posts_with_user = []
+        for post in tag_post_list:
+            # Get like count
+            like_count = db.query(func.count(Like.id)).filter(Like.post_id == post.id).scalar() or 0
+            # Check if current user liked this post
+            is_liked = False
+            if current_user:
+                is_liked = db.query(Like).filter(
+                    Like.post_id == post.id,
+                    Like.user_id == current_user.id
+                ).first() is not None
+            # Get comments
+            comments_with_user = []
+            for comment in post.comments:
+                comment_dict = CommentWithUser(
+                    id=comment.id,
+                    post_id=comment.post_id,
+                    user_id=comment.user_id,
+                    anonymous_name=comment.anonymous_name,
+                    content=comment.content,
+                    created_at=comment.created_at,
+                    updated_at=comment.updated_at,
+                    is_edited=comment.is_edited,
+                    user=comment.user if comment.user_id else None
                 )
-                posts_with_user.append(post_dict)
+                comments_with_user.append(comment_dict)
             
-            result.append(WeeklySummaryItem(
-                tag=tag,
-                count=len(tag_post_list),
-                posts=posts_with_user
-            ))
+            post_dict = PostWithUser(
+                id=post.id,
+                user_id=post.user_id,
+                anonymous_name=post.anonymous_name,
+                content=post.content,
+                tags=post.tags or [],
+                created_at=post.created_at,
+                updated_at=post.updated_at,
+                is_edited=post.is_edited,
+                user=post.user if post.user_id else None,
+                comments=comments_with_user,
+                like_count=like_count,
+                is_liked=is_liked
+            )
+            posts_with_user.append(post_dict)
+        
+        result.append(WeeklySummaryItem(
+            tag=tag_name,
+            count=len(tag_post_list),
+            posts=posts_with_user
+        ))
     
     # Add "other" category if there are posts without tags
     if other_posts:
@@ -318,7 +319,7 @@ async def get_weekly_summary(
 
 def build_weekly_summary_for_range(
     posts: list[Post],
-    preset_tags: list[str],
+    available_tag_names: set[str],
     db: Session,
     current_user: User | None
 ) -> List[WeeklySummaryItem]:
@@ -332,17 +333,17 @@ def build_weekly_summary_for_range(
         tags = post.tags or []
         
         if tags:
-            has_preset_tag = False
+            has_valid_tag = False
             for tag in tags:
-                if tag in preset_tags:
-                    has_preset_tag = True
+                if tag in available_tag_names:
+                    has_valid_tag = True
                     if tag not in tag_posts:
                         tag_posts[tag] = []
                     if post.id not in processed_posts:
                         tag_posts[tag].append(post)
                         processed_posts.add(post.id)
             
-            if not has_preset_tag and post.id not in processed_posts:
+            if not has_valid_tag and post.id not in processed_posts:
                 other_posts.append(post)
                 processed_posts.add(post.id)
         else:
@@ -351,57 +352,55 @@ def build_weekly_summary_for_range(
                 processed_posts.add(post.id)
     
     result = []
-    preset_tags_list = preset_tags
     
-    # Add tagged categories
-    for tag in preset_tags_list:
-        if tag in tag_posts:
-            tag_post_list = tag_posts[tag]
-            posts_with_user = []
-            for post in tag_post_list:
-                like_count = db.query(func.count(Like.id)).filter(Like.post_id == post.id).scalar() or 0
-                is_liked = False
-                if current_user:
-                    is_liked = db.query(Like).filter(
-                        Like.post_id == post.id,
-                        Like.user_id == current_user.id
-                    ).first() is not None
-                comments_with_user = []
-                for comment in post.comments:
-                    comment_dict = CommentWithUser(
-                        id=comment.id,
-                        post_id=comment.post_id,
-                        user_id=comment.user_id,
-                        anonymous_name=comment.anonymous_name,
-                        content=comment.content,
-                        created_at=comment.created_at,
-                        updated_at=comment.updated_at,
-                        is_edited=comment.is_edited,
-                        user=comment.user if comment.user_id else None
-                    )
-                    comments_with_user.append(comment_dict)
-                
-                post_dict = PostWithUser(
-                    id=post.id,
-                    user_id=post.user_id,
-                    anonymous_name=post.anonymous_name,
-                    content=post.content,
-                    tags=post.tags or [],
-                    created_at=post.created_at,
-                    updated_at=post.updated_at,
-                    is_edited=post.is_edited,
-                    user=post.user if post.user_id else None,
-                    comments=comments_with_user,
-                    like_count=like_count,
-                    is_liked=is_liked
+    # Add tagged categories (sorted by tag name)
+    for tag_name in sorted(tag_posts.keys()):
+        tag_post_list = tag_posts[tag_name]
+        posts_with_user = []
+        for post in tag_post_list:
+            like_count = db.query(func.count(Like.id)).filter(Like.post_id == post.id).scalar() or 0
+            is_liked = False
+            if current_user:
+                is_liked = db.query(Like).filter(
+                    Like.post_id == post.id,
+                    Like.user_id == current_user.id
+                ).first() is not None
+            comments_with_user = []
+            for comment in post.comments:
+                comment_dict = CommentWithUser(
+                    id=comment.id,
+                    post_id=comment.post_id,
+                    user_id=comment.user_id,
+                    anonymous_name=comment.anonymous_name,
+                    content=comment.content,
+                    created_at=comment.created_at,
+                    updated_at=comment.updated_at,
+                    is_edited=comment.is_edited,
+                    user=comment.user if comment.user_id else None
                 )
-                posts_with_user.append(post_dict)
+                comments_with_user.append(comment_dict)
             
-            result.append(WeeklySummaryItem(
-                tag=tag,
-                count=len(tag_post_list),
-                posts=posts_with_user
-            ))
+            post_dict = PostWithUser(
+                id=post.id,
+                user_id=post.user_id,
+                anonymous_name=post.anonymous_name,
+                content=post.content,
+                tags=post.tags or [],
+                created_at=post.created_at,
+                updated_at=post.updated_at,
+                is_edited=post.is_edited,
+                user=post.user if post.user_id else None,
+                comments=comments_with_user,
+                like_count=like_count,
+                is_liked=is_liked
+            )
+            posts_with_user.append(post_dict)
+        
+        result.append(WeeklySummaryItem(
+            tag=tag_name,
+            count=len(tag_post_list),
+            posts=posts_with_user
+        ))
     
     # Add "other" category
     if other_posts:
@@ -474,7 +473,10 @@ async def get_weekly_reports(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
-    preset_tags = ['#gettingup', '#running', '#reading']
+    # Get all tags from the tags table
+    all_tags = db.query(Tag).order_by(Tag.name).all()
+    available_tag_names = {tag.name for tag in all_tags}
+    
     reports = []
     
     # Get current time in UTC
@@ -516,7 +518,7 @@ async def get_weekly_reports(
         ).all()
         
         if week_posts:
-            categories = build_weekly_summary_for_range(week_posts, preset_tags, db, current_user)
+            categories = build_weekly_summary_for_range(week_posts, available_tag_names, db, current_user)
             if categories:  # Only add if there are categories
                 reports.append(WeeklyReport(
                     week_start=week_start_date.isoformat(),
